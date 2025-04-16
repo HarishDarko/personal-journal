@@ -76,21 +76,10 @@ jobs:
         working-directory: ./infra
         shell: bash
         run: |
-          # Debug: Print raw output to see what terraform is producing
-          echo "--- RAW TERRAFORM OUTPUT START ---"
-          terraform output -json
-          echo "--- RAW TERRAFORM OUTPUT END ---"
-          
-          # Extract only the JSON block from the first '{' to the last '}'
-          TF_JSON=$(terraform output -json | sed -n '/^{/,/}$/p')
-
-          # Debug: Print the extracted JSON block
-          echo "--- EXTRACTED JSON BLOCK START ---"
-          echo "${TF_JSON}"
-          echo "--- EXTRACTED JSON BLOCK END ---"
-
-          # Parse the extracted JSON with jq
-          ALB_DNS_NAME=$(echo "${TF_JSON}" | jq -r .alb_dns_name.value)
+          # Get the raw ALB DNS name output
+          FULL_OUTPUT=$(terraform output -raw alb_dns_name)
+          # Extract the first line from the full output
+          ALB_DNS_NAME=$(echo "${FULL_OUTPUT}" | head -n 1)
           
           # Set outputs for GitHub Actions
           echo "alb_dns_name=${ALB_DNS_NAME}" >> $GITHUB_OUTPUT
