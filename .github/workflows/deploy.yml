@@ -73,16 +73,38 @@ jobs:
         working-directory: ./infra
         run: terraform apply -auto-approve tfplan
 
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
       - name: Get Terraform Outputs
         id: terraform-output
         working-directory: ./infra
+        shell: bash
         run: |
-          ALB_DNS_NAME=$(terraform output -raw alb_dns_name)
-          FRONTEND_REPO_URL=$(terraform output -raw frontend_ecr_repository_url)
-          BACKEND_REPO_URL=$(terraform output -raw backend_ecr_repository_url)
+          # Get outputs in JSON format
+          OUTPUTS=$(terraform output -json)
+
+          # Parse outputs using jq
+          ALB_DNS_NAME=$(echo $OUTPUTS | jq -r '.alb_dns_name.value')
+          FRONTEND_REPO_URL=$(echo $OUTPUTS | jq -r '.frontend_ecr_repository_url.value')
+          BACKEND_REPO_URL=$(echo $OUTPUTS | jq -r '.backend_ecr_repository_url.value')
+
+          # Verify outputs were captured correctly
+          if [ -z "$ALB_DNS_NAME" ] || [ -z "$FRONTEND_REPO_URL" ] || [ -z "$BACKEND_REPO_URL" ]; then
+            echo "Failed to capture one or more Terraform outputs"
+            echo "Raw outputs: $OUTPUTS"
+            exit 1
+          fi
+
+          # Set outputs for GitHub Actions
           echo "alb_dns_name=${ALB_DNS_NAME}" >> $GITHUB_OUTPUT
           echo "frontend_repository_url=${FRONTEND_REPO_URL}" >> $GITHUB_OUTPUT
           echo "backend_repository_url=${BACKEND_REPO_URL}" >> $GITHUB_OUTPUT
+
+          # Print outputs for verification
+          echo "ALB DNS Name: ${ALB_DNS_NAME}"
+          echo "Frontend Repository URL: ${FRONTEND_REPO_URL}"
+          echo "Backend Repository URL: ${BACKEND_REPO_URL}"
 
   build-and-push:
     name: Build and Push Docker Images
