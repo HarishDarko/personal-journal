@@ -41,9 +41,6 @@
 
     - name: Rollback deployment
       include_tasks: rollback.yml
-      vars:
-        previous_frontend_task_def: "{{ previous_frontend_task_def }}"
-        previous_backend_task_def: "{{ previous_backend_task_def }}"
       when: action == 'rollback'
 
 #trigger test 5
