@@ -76,26 +76,19 @@ jobs:
         working-directory: ./infra
         shell: bash
         run: |
-          # Run terraform output and capture all output (both stdout and stderr)
-          terraform output -json > terraform_output_raw.json
+          # Debug: Print raw output to see what terraform is producing
+          echo "--- RAW TERRAFORM OUTPUT START ---"
+          terraform output -json
+          echo "--- RAW TERRAFORM OUTPUT END ---"
           
-          # Extract only the JSON part (from the first '{' to the end of file)
-          # This ensures we only get valid JSON regardless of any prefix text
-          TF_OUTPUTS=$(sed -n '/^{/,$p' terraform_output_raw.json)
+          # Run terraform output directly and pipe to jq to ensure clean JSON
+          ALB_DNS_NAME=$(terraform output -json | jq -r .alb_dns_name.value)
           
-          # Debug: Print the extracted JSON
-          echo "--- EXTRACTED JSON --- "
-          echo "${TF_OUTPUTS}"
-          
-          # Parse the JSON to extract the specific value using jq
-          ALB_DNS_NAME=$(echo "${TF_OUTPUTS}" | jq -r .alb_dns_name.value)
-
           # Set outputs for GitHub Actions
           echo "alb_dns_name=${ALB_DNS_NAME}" >> $GITHUB_OUTPUT
-
+          
           # Print outputs for verification
           echo "ALB DNS Name: ${ALB_DNS_NAME}"
-          # No need to get/output other URLs here as they aren't used directly later
 
   build-and-push:
     name: Build and Push Docker Images
