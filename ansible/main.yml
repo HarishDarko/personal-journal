@@ -12,6 +12,12 @@
     action: "{{ action | default('verify') }}"
     frontend_image: "{{ frontend_image | default('') }}"
     backend_image: "{{ backend_image | default('') }}"
+    # Define retry variables here for smoke tests
+    max_retries: 10
+    retry_delay: 30  # seconds
+    # Define rollback variables with defaults (can be overridden by -e)
+    previous_frontend_task_def: "{{ previous_frontend_task_def | default('') }}"
+    previous_backend_task_def: "{{ previous_backend_task_def | default('') }}"
   
   tasks:
     - name: Display action

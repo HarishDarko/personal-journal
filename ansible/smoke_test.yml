@@ -1,7 +1,3 @@
-- name: Set base URL
-  set_fact:
-    base_url: "http://{{ alb_dns_name }}"
-
 - name: Print test information
   debug:
     msg: "Running smoke tests against {{ base_url }}"

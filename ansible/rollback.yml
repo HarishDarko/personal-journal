@@ -6,8 +6,13 @@
   debug:
     msg: |
       Rolling back to previous task definitions:
-      Frontend: {{ previous_frontend_task_def }}
-      Backend: {{ previous_backend_task_def }}
+      Frontend: {{ previous_frontend_task_def | default('Not provided') }}
+      Backend: {{ previous_backend_task_def | default('Not provided') }}
+
+# - name: Fail if previous task definitions not provided
+#   fail:
+#     msg: "Cannot perform rollback. Previous task definition ARNs (previous_frontend_task_def, previous_backend_task_def) were not provided."
+#   when: previous_frontend_task_def is not defined or previous_backend_task_def is not defined or previous_frontend_task_def == "" or previous_backend_task_def == ""
 
 - name: Rollback frontend service
   shell: aws ecs update-service --cluster {{ project_name }}-cluster --service {{ project_name }}-frontend-service --task-definition {{ previous_frontend_task_def }} {{ aws_cli_region_param }}
