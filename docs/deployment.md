@@ -141,6 +141,18 @@ The application uses remote state management with S3 and DynamoDB to ensure safe
 
 After the bootstrap process, initialize the main Terraform configuration with the remote state:
 
+**Windows (PowerShell):**
+```powershell
+cd ..
+terraform init `
+  -backend-config="bucket=personal-journal-terraform-state" `
+  -backend-config="key=terraform/state/personal-journal.tfstate" `
+  -backend-config="region=us-east-1" `
+  -backend-config="dynamodb_table=personal-journal-terraform-locks" `
+  -backend-config="encrypt=true"
+```
+
+**Linux/macOS (Bash):**
 ```bash
 cd ../
 terraform init \
@@ -155,19 +167,48 @@ terraform init \
 
 The deployment process is fully automated using GitHub Actions. When changes are pushed to the main branch, the following steps are executed:
 
-### 1. Build and Push Docker Images
+### Initial Deployment
 
-- Frontend and backend Docker images are built
-- Images are tagged with the short SHA of the commit
-- Images are pushed to AWS ECR repositories
+For the very first deployment, you need to run a script to push placeholder images to ECR:
 
-### 2. Deploy Infrastructure
+**Windows (PowerShell):**
+```powershell
+cd scripts
+.\push_placeholder_images.ps1
+```
+
+**Linux/macOS (Bash):**
+```bash
+cd scripts
+chmod +x push_placeholder_images.sh
+./push_placeholder_images.sh
+```
+
+This ensures that the ECR repositories have valid images that can be referenced by the ECS task definitions during the initial deployment.
+
+### Automated Deployment Workflow
+
+The GitHub Actions workflow follows these steps:
+
+### 1. Deploy Infrastructure
 
 - Terraform initializes and validates the configuration
 - Infrastructure changes are planned and applied
-- Variables for image tags and MongoDB URI secret ARN are passed to Terraform
+- This creates all AWS resources including ECR repositories, VPC, ECS cluster, etc.
+- Initially, ECS services use placeholder images with the "latest" tag
 
-### 3. Verify Deployment
+### 2. Build and Push Docker Images
+
+- Frontend and backend Docker images are built
+- Images are tagged with the short SHA of the commit
+- Images are pushed to the AWS ECR repositories created in step 1
+
+### 3. Update ECS Services
+
+- ECS services are updated with the new Docker image tags
+- The deployment waits for the services to stabilize
+
+### 4. Verify Deployment
 
 - Environment validation checks that all required AWS resources exist
 - Deployment verification confirms that the correct Docker images are deployed
@@ -184,6 +225,26 @@ The deployment process is fully automated using GitHub Actions. When changes are
 If you need to deploy the application manually, follow these steps:
 
 1. **Build and Push Docker Images**:
+
+   **Windows (PowerShell):**
+   ```powershell
+   # Login to ECR
+   $AccountId = (aws sts get-caller-identity --query Account --output text)
+   $LoginCmd = (aws ecr get-login-password --region us-east-1)
+   $LoginCmd | docker login --username AWS --password-stdin "$AccountId.dkr.ecr.us-east-1.amazonaws.com"
+
+   # Build and push frontend image
+   cd client
+   docker build -t "$AccountId.dkr.ecr.us-east-1.amazonaws.com/personal-journal-frontend:latest" -f Dockerfile.frontend .
+   docker push "$AccountId.dkr.ecr.us-east-1.amazonaws.com/personal-journal-frontend:latest"
+
+   # Build and push backend image
+   cd ..
+   docker build -t "$AccountId.dkr.ecr.us-east-1.amazonaws.com/personal-journal-backend:latest" -f Dockerfile.backend .
+   docker push "$AccountId.dkr.ecr.us-east-1.amazonaws.com/personal-journal-backend:latest"
+   ```
+
+   **Linux/macOS (Bash):**
    ```bash
    # Login to ECR
    aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <account-id>.dkr.ecr.us-east-1.amazonaws.com
@@ -200,6 +261,16 @@ If you need to deploy the application manually, follow these steps:
    ```
 
 2. **Deploy Infrastructure**:
+
+   **Windows (PowerShell):**
+   ```powershell
+   cd infra
+   terraform init
+   terraform plan -var="frontend_image_tag=latest" -var="backend_image_tag=latest" -var="mongo_uri_secret_arn=<secret-arn>" -out=tfplan
+   terraform apply tfplan
+   ```
+
+   **Linux/macOS (Bash):**
    ```bash
    cd infra
    terraform init
@@ -208,6 +279,14 @@ If you need to deploy the application manually, follow these steps:
    ```
 
 3. **Verify Deployment**:
+
+   **Windows (PowerShell):**
+   ```powershell
+   cd ..\ansible
+   ansible-playbook main.yml -e "action=full aws_region=us-east-1 project_name=personal-journal alb_dns_name=<alb-dns-name> frontend_image=<frontend-image> backend_image=<backend-image>"
+   ```
+
+   **Linux/macOS (Bash):**
    ```bash
    cd ../ansible
    ansible-playbook main.yml -e "action=full aws_region=us-east-1 project_name=personal-journal alb_dns_name=<alb-dns-name> frontend_image=<frontend-image> backend_image=<backend-image>"

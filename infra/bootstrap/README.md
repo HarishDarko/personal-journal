@@ -73,6 +73,18 @@ dynamodb_table_name  = "my-custom-table-name"
 
 After creating these resources, you need to configure the main Terraform configuration to use them:
 
+**Windows (PowerShell):**
+```powershell
+cd ..
+terraform init `
+  -backend-config="bucket=<state_bucket_name>" `
+  -backend-config="key=terraform/state/personal-journal.tfstate" `
+  -backend-config="region=<aws_region>" `
+  -backend-config="dynamodb_table=<dynamodb_table_name>" `
+  -backend-config="encrypt=true"
+```
+
+**Linux/macOS (Bash):**
 ```bash
 cd ../
 terraform init \
