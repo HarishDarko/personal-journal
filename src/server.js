@@ -32,6 +32,24 @@ app.get('/', (req, res) => {
   res.send('Personal Journal Microservice API is running');
 });
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    message: 'API is healthy',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// API root endpoint
+app.get('/api', (req, res) => {
+  res.status(200).json({
+    message: 'Welcome to the Personal Journal API',
+    version: '1.0.0'
+  });
+});
+
 // Connect to MongoDB
 const connectDB = async () => {
   try {

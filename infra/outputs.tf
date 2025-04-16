@@ -42,3 +42,8 @@ output "backend_service_name" {
   description = "The name of the backend ECS service"
   value       = aws_ecs_service.backend.name
 }
+
+output "nat_gateway_public_ip" {
+  description = "The public IP address of the NAT Gateway (whitelist this in MongoDB Atlas)"
+  value       = aws_eip.nat.public_ip
+}

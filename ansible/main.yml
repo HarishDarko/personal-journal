@@ -1,0 +1,41 @@
+---
+- name: Main Automation Playbook for Personal Journal Application
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  
+  vars:
+    aws_region: "{{ aws_region | default('us-east-1') }}"
+    project_name: "{{ project_name | default('personal-journal') }}"
+    environment: "{{ environment | default('dev') }}"
+    alb_dns_name: "{{ alb_dns_name }}"
+    action: "{{ action | default('verify') }}"
+    frontend_image: "{{ frontend_image | default('') }}"
+    backend_image: "{{ backend_image | default('') }}"
+  
+  tasks:
+    - name: Display action
+      debug:
+        msg: "Performing action: {{ action }}"
+
+    - name: Validate environment
+      include_tasks: environment_validation.yml
+      when: action == 'validate' or action == 'full'
+
+    - name: Verify deployment
+      include_tasks: deployment_verification.yml
+      vars:
+        expected_frontend_image: "{{ frontend_image }}"
+        expected_backend_image: "{{ backend_image }}"
+      when: action == 'verify' or action == 'full'
+
+    - name: Run smoke tests
+      include_tasks: smoke_test.yml
+      when: action == 'smoke' or action == 'full'
+
+    - name: Rollback deployment
+      include_tasks: rollback.yml
+      vars:
+        previous_frontend_task_def: "{{ previous_frontend_task_def }}"
+        previous_backend_task_def: "{{ previous_backend_task_def }}"
+      when: action == 'rollback'

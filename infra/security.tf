@@ -56,6 +56,16 @@ resource "aws_security_group" "ecs_service" {
     description     = "Allow traffic from ALB to backend container port"
   }
 
+  # Specific rule for MongoDB Atlas (standard port)
+  egress {
+    from_port   = 27017
+    to_port     = 27017
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow outbound traffic to MongoDB Atlas"
+  }
+
+  # General egress rule for other traffic
   egress {
     from_port   = 0
     to_port     = 0

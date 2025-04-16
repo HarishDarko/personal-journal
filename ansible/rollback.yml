@@ -1,0 +1,56 @@
+---
+- name: Rollback Deployment of Personal Journal Application
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  
+  vars:
+    aws_region: "{{ aws_region | default('us-east-1') }}"
+    project_name: "{{ project_name | default('personal-journal') }}"
+    environment: "{{ environment | default('dev') }}"
+    previous_frontend_task_def: "{{ previous_frontend_task_def }}"
+    previous_backend_task_def: "{{ previous_backend_task_def }}"
+  
+  tasks:
+    - name: Set AWS region for AWS CLI commands
+      set_fact:
+        aws_cli_region_param: "--region {{ aws_region }}"
+
+    - name: Display rollback information
+      debug:
+        msg: |
+          Rolling back to previous task definitions:
+          Frontend: {{ previous_frontend_task_def }}
+          Backend: {{ previous_backend_task_def }}
+
+    - name: Rollback frontend service
+      shell: aws ecs update-service --cluster {{ project_name }}-cluster --service {{ project_name }}-frontend-service --task-definition {{ previous_frontend_task_def }} {{ aws_cli_region_param }}
+      register: frontend_rollback
+      changed_when: true
+
+    - name: Rollback backend service
+      shell: aws ecs update-service --cluster {{ project_name }}-cluster --service {{ project_name }}-backend-service --task-definition {{ previous_backend_task_def }} {{ aws_cli_region_param }}
+      register: backend_rollback
+      changed_when: true
+
+    - name: Display rollback status
+      debug:
+        msg: |
+          Frontend service rollback status: {{ 'Success' if frontend_rollback.rc == 0 else 'Failed' }}
+          Backend service rollback status: {{ 'Success' if backend_rollback.rc == 0 else 'Failed' }}
+
+    - name: Wait for services to stabilize
+      shell: aws ecs wait services-stable --cluster {{ project_name }}-cluster --services {{ project_name }}-frontend-service {{ project_name }}-backend-service {{ aws_cli_region_param }}
+      register: wait_result
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Verify rollback
+      assert:
+        that:
+          - frontend_rollback.rc == 0
+          - backend_rollback.rc == 0
+          - wait_result.rc == 0
+        fail_msg: "Rollback failed. Manual intervention may be required."
+        success_msg: "Rollback completed successfully."
+      ignore_errors: yes
