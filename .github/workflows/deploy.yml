@@ -76,10 +76,10 @@ jobs:
         working-directory: ./infra
         shell: bash
         run: |
-          # Get the raw ALB DNS name output
-          FULL_OUTPUT=$(terraform output -raw alb_dns_name)
-          # Extract the first line from the full output
-          ALB_DNS_NAME=$(echo "${FULL_OUTPUT}" | head -n 1)
+          # Get all Terraform outputs in JSON format
+          TF_OUTPUTS=$(terraform output -json)
+          # Parse the JSON to extract the specific value using jq
+          ALB_DNS_NAME=$(echo "${TF_OUTPUTS}" | jq -r .alb_dns_name.value)
 
           # Set outputs for GitHub Actions
           echo "alb_dns_name=${ALB_DNS_NAME}" >> $GITHUB_OUTPUT
