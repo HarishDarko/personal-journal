@@ -81,8 +81,16 @@ jobs:
           terraform output -json
           echo "--- RAW TERRAFORM OUTPUT END ---"
           
-          # Run terraform output and skip the first line before passing to jq
-          ALB_DNS_NAME=$(terraform output -json | tail -n +2 | jq -r .alb_dns_name.value)
+          # Extract only the JSON block from the first '{' to the last '}'
+          TF_JSON=$(terraform output -json | sed -n '/^{/,/}$/p')
+
+          # Debug: Print the extracted JSON block
+          echo "--- EXTRACTED JSON BLOCK START ---"
+          echo "${TF_JSON}"
+          echo "--- EXTRACTED JSON BLOCK END ---"
+
+          # Parse the extracted JSON with jq
+          ALB_DNS_NAME=$(echo "${TF_JSON}" | jq -r .alb_dns_name.value)
           
           # Set outputs for GitHub Actions
           echo "alb_dns_name=${ALB_DNS_NAME}" >> $GITHUB_OUTPUT
