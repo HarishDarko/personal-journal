@@ -120,13 +120,14 @@ const sendTokenResponse = (user, statusCode, res) => {
     expires: new Date(
       Date.now() + (process.env.JWT_COOKIE_EXPIRE || 30) * 24 * 60 * 60 * 1000
     ),
-    httpOnly: true
+    httpOnly: true,
+    sameSite: 'Lax'
   };
 
-  // Use secure cookies in production
-  if (process.env.NODE_ENV === 'production') {
-    options.secure = true;
-  }
+  // Use secure cookies in production - Temporarily commented out if not using HTTPS
+  // if (process.env.NODE_ENV === 'production') {
+  //   options.secure = true;
+  // }
 
   res
     .status(statusCode)
