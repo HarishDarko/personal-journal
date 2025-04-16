@@ -73,28 +73,15 @@ jobs:
         working-directory: ./infra
         run: terraform apply -auto-approve tfplan
 
-      - name: Install jq
-        run: sudo apt-get install -y jq
-
       - name: Get Terraform Outputs
         id: terraform-output
         working-directory: ./infra
         shell: bash
         run: |
-          # Get outputs in JSON format
-          OUTPUTS=$(terraform output -json)
-
-          # Parse outputs using jq
-          ALB_DNS_NAME=$(echo $OUTPUTS | jq -r '.alb_dns_name.value')
-          FRONTEND_REPO_URL=$(echo $OUTPUTS | jq -r '.frontend_ecr_repository_url.value')
-          BACKEND_REPO_URL=$(echo $OUTPUTS | jq -r '.backend_ecr_repository_url.value')
-
-          # Verify outputs were captured correctly
-          if [ -z "$ALB_DNS_NAME" ] || [ -z "$FRONTEND_REPO_URL" ] || [ -z "$BACKEND_REPO_URL" ]; then
-            echo "Failed to capture one or more Terraform outputs"
-            echo "Raw outputs: $OUTPUTS"
-            exit 1
-          fi
+          # Get each output separately and trim any whitespace
+          ALB_DNS_NAME=$(terraform output alb_dns_name | tr -d '"' | xargs)
+          FRONTEND_REPO_URL=$(terraform output frontend_ecr_repository_url | tr -d '"' | xargs)
+          BACKEND_REPO_URL=$(terraform output backend_ecr_repository_url | tr -d '"' | xargs)
 
           # Set outputs for GitHub Actions
           echo "alb_dns_name=${ALB_DNS_NAME}" >> $GITHUB_OUTPUT
