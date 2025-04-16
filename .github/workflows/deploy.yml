@@ -79,9 +79,8 @@ jobs:
           # Get the raw ALB DNS name output and write to temp file
           terraform output -raw alb_dns_name > alb_dns_name_raw.txt
           
-          # Extract only the line containing the actual DNS name using grep
-          # This filters out the command path line and any trailing debug info
-          ALB_DNS_NAME=$(grep '\.elb\.amazonaws\.com' alb_dns_name_raw.txt)
+          # Extract the line containing the DNS name and remove the trailing debug info
+          ALB_DNS_NAME=$(grep '\.elb\.amazonaws\.com' alb_dns_name_raw.txt | sed 's/::debug::.*//')
           
           # Set outputs for GitHub Actions
           echo "alb_dns_name=${ALB_DNS_NAME}" >> $GITHUB_OUTPUT
