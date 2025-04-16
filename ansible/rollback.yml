@@ -18,11 +18,13 @@
   shell: aws ecs update-service --cluster {{ project_name }}-cluster --service {{ project_name }}-frontend-service --task-definition {{ previous_frontend_task_def }} {{ aws_cli_region_param }}
   register: frontend_rollback
   changed_when: true
+  when: previous_frontend_task_def | default('') != ""
 
 - name: Rollback backend service
   shell: aws ecs update-service --cluster {{ project_name }}-cluster --service {{ project_name }}-backend-service --task-definition {{ previous_backend_task_def }} {{ aws_cli_region_param }}
   register: backend_rollback
   changed_when: true
+  when: previous_backend_task_def | default('') != ""
 
 - name: Display rollback status
   debug:
