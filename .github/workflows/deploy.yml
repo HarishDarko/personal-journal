@@ -76,22 +76,15 @@ jobs:
         working-directory: ./infra
         shell: bash
         run: |
-          # Write terraform output to a temporary file
-          terraform output -json > terraform_output.json
+          # Run terraform output and capture all output (both stdout and stderr)
+          terraform output -json > terraform_output_raw.json
           
-          # Check if file starts with a path (indicating the command is in the output)
-          if grep -q "^/" terraform_output.json; then
-            # Remove the first line (the command) and keep only the JSON part
-            sed '1d' terraform_output.json > terraform_output_clean.json
-            # Use the cleaned file
-            TF_OUTPUTS=$(cat terraform_output_clean.json)
-          else
-            # Use the original output if it doesn't have the command prefix
-            TF_OUTPUTS=$(cat terraform_output.json)
-          fi
+          # Extract only the JSON part (from the first '{' to the end of file)
+          # This ensures we only get valid JSON regardless of any prefix text
+          TF_OUTPUTS=$(sed -n '/^{/,$p' terraform_output_raw.json)
           
-          # Debug: Print the cleaned output
-          echo "--- CLEANED TF_OUTPUTS --- "
+          # Debug: Print the extracted JSON
+          echo "--- EXTRACTED JSON --- "
           echo "${TF_OUTPUTS}"
           
           # Parse the JSON to extract the specific value using jq
