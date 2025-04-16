@@ -76,20 +76,15 @@ jobs:
         working-directory: ./infra
         shell: bash
         run: |
-          # Get each output separately and trim any whitespace
-          ALB_DNS_NAME=$(terraform output alb_dns_name | tr -d '"' | xargs)
-          FRONTEND_REPO_URL=$(terraform output frontend_ecr_repository_url | tr -d '"' | xargs)
-          BACKEND_REPO_URL=$(terraform output backend_ecr_repository_url | tr -d '"' | xargs)
+          # Get the raw ALB DNS name output
+          ALB_DNS_NAME=$(terraform output -raw alb_dns_name)
 
           # Set outputs for GitHub Actions
           echo "alb_dns_name=${ALB_DNS_NAME}" >> $GITHUB_OUTPUT
-          echo "frontend_repository_url=${FRONTEND_REPO_URL}" >> $GITHUB_OUTPUT
-          echo "backend_repository_url=${BACKEND_REPO_URL}" >> $GITHUB_OUTPUT
 
           # Print outputs for verification
           echo "ALB DNS Name: ${ALB_DNS_NAME}"
-          echo "Frontend Repository URL: ${FRONTEND_REPO_URL}"
-          echo "Backend Repository URL: ${BACKEND_REPO_URL}"
+          # No need to get/output other URLs here as they aren't used directly later
 
   build-and-push:
     name: Build and Push Docker Images
