@@ -76,12 +76,24 @@ jobs:
         working-directory: ./infra
         shell: bash
         run: |
-          # Get all Terraform outputs in JSON format
-          TF_OUTPUTS=$(terraform output -json)
-          # Debug: Print the raw Terraform output
-          echo "--- TF_OUTPUTS --- START --- "
+          # Write terraform output to a temporary file
+          terraform output -json > terraform_output.json
+          
+          # Check if file starts with a path (indicating the command is in the output)
+          if grep -q "^/" terraform_output.json; then
+            # Remove the first line (the command) and keep only the JSON part
+            sed '1d' terraform_output.json > terraform_output_clean.json
+            # Use the cleaned file
+            TF_OUTPUTS=$(cat terraform_output_clean.json)
+          else
+            # Use the original output if it doesn't have the command prefix
+            TF_OUTPUTS=$(cat terraform_output.json)
+          fi
+          
+          # Debug: Print the cleaned output
+          echo "--- CLEANED TF_OUTPUTS --- "
           echo "${TF_OUTPUTS}"
-          echo "--- TF_OUTPUTS --- END --- "
+          
           # Parse the JSON to extract the specific value using jq
           ALB_DNS_NAME=$(echo "${TF_OUTPUTS}" | jq -r .alb_dns_name.value)
 
