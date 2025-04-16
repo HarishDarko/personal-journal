@@ -81,8 +81,8 @@ jobs:
           terraform output -json
           echo "--- RAW TERRAFORM OUTPUT END ---"
           
-          # Run terraform output directly and pipe to jq to ensure clean JSON
-          ALB_DNS_NAME=$(terraform output -json | jq -r .alb_dns_name.value)
+          # Run terraform output and skip the first line before passing to jq
+          ALB_DNS_NAME=$(terraform output -json | tail -n +2 | jq -r .alb_dns_name.value)
           
           # Set outputs for GitHub Actions
           echo "alb_dns_name=${ALB_DNS_NAME}" >> $GITHUB_OUTPUT
