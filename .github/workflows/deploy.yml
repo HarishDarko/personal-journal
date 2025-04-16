@@ -25,8 +25,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       alb_dns_name: ${{ steps.terraform-output.outputs.alb_dns_name }}
-      frontend_repository_url: ${{ steps.terraform-output.outputs.frontend_repository_url }}
-      backend_repository_url: ${{ steps.terraform-output.outputs.backend_repository_url }}
 
     steps:
       - name: Checkout code
@@ -100,6 +98,7 @@ jobs:
     outputs:
       frontend_image_tag: ${{ steps.build-image.outputs.frontend_image_tag }}
       backend_image_tag: ${{ steps.build-image.outputs.backend_image_tag }}
+      aws_account_id: ${{ steps.get-account-id.outputs.aws_account_id }}
 
     steps:
       - name: Checkout code
@@ -112,6 +111,14 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Get AWS Account ID
+        id: get-account-id
+        shell: bash
+        run: |
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "aws_account_id=${AWS_ACCOUNT_ID}" >> $GITHUB_OUTPUT
+          echo "AWS Account ID: ${AWS_ACCOUNT_ID}"
+
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
@@ -123,6 +130,10 @@ jobs:
         id: build-image
         shell: bash
         run: |
+          # Construct repository URLs
+          FRONTEND_REPO_URL="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY_FRONTEND}"
+          BACKEND_REPO_URL="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY_BACKEND}"
+
           # Debug: Print repository URLs
           echo "Frontend Repository URL: $FRONTEND_REPO_URL"
           echo "Backend Repository URL: $BACKEND_REPO_URL"
@@ -140,8 +151,7 @@ jobs:
           docker build -t "${BACKEND_REPO_URL}:${IMAGE_TAG}" -f Dockerfile.backend .
           docker push "${BACKEND_REPO_URL}:${IMAGE_TAG}"
         env:
-          FRONTEND_REPO_URL: ${{ needs.deploy-infrastructure.outputs.frontend_repository_url }}
-          BACKEND_REPO_URL: ${{ needs.deploy-infrastructure.outputs.backend_repository_url }}
+          AWS_ACCOUNT_ID: ${{ steps.get-account-id.outputs.aws_account_id }}
 
   update-ecs-services:
     name: Update ECS Services
@@ -179,10 +189,24 @@ jobs:
         working-directory: ./infra
         shell: bash
         run: |
+          # Construct repository URLs
+          FRONTEND_REPO_URL="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY_FRONTEND}"
+          BACKEND_REPO_URL="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY_BACKEND}"
+
+          # Debug: Print image tags and repository URLs
+          echo "Frontend Image Tag: $FRONTEND_IMAGE_TAG"
+          echo "Backend Image Tag: $BACKEND_IMAGE_TAG"
+          echo "Frontend Repository URL: $FRONTEND_REPO_URL"
+          echo "Backend Repository URL: $BACKEND_REPO_URL"
+
           terraform apply -auto-approve \
-            -var="frontend_image_tag=${{ needs.build-and-push.outputs.frontend_image_tag }}" \
-            -var="backend_image_tag=${{ needs.build-and-push.outputs.backend_image_tag }}" \
+            -var="frontend_image_tag=$FRONTEND_IMAGE_TAG" \
+            -var="backend_image_tag=$BACKEND_IMAGE_TAG" \
             -var="mongo_uri_secret_arn=${{ secrets.MONGO_URI_SECRET_ARN }}"
+        env:
+          FRONTEND_IMAGE_TAG: ${{ needs.build-and-push.outputs.frontend_image_tag }}
+          BACKEND_IMAGE_TAG: ${{ needs.build-and-push.outputs.backend_image_tag }}
+          AWS_ACCOUNT_ID: ${{ needs.build-and-push.outputs.aws_account_id }}
 
       - name: Wait for ECS Services to Stabilize
         shell: bash
@@ -223,6 +247,10 @@ jobs:
         working-directory: ./ansible
         shell: bash
         run: |
+          # Construct repository URLs
+          FRONTEND_REPO_URL="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY_FRONTEND}"
+          BACKEND_REPO_URL="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY_BACKEND}"
+
           # Debug: Print parameters
           echo "ALB DNS Name: $ALB_DNS_NAME"
           echo "Frontend Image: $FRONTEND_REPO_URL:$FRONTEND_IMAGE_TAG"
@@ -232,10 +260,9 @@ jobs:
         continue-on-error: true
         env:
           ALB_DNS_NAME: ${{ needs.deploy-infrastructure.outputs.alb_dns_name }}
-          FRONTEND_REPO_URL: ${{ needs.deploy-infrastructure.outputs.frontend_repository_url }}
-          BACKEND_REPO_URL: ${{ needs.deploy-infrastructure.outputs.backend_repository_url }}
           FRONTEND_IMAGE_TAG: ${{ needs.build-and-push.outputs.frontend_image_tag }}
           BACKEND_IMAGE_TAG: ${{ needs.build-and-push.outputs.backend_image_tag }}
+          AWS_ACCOUNT_ID: ${{ needs.build-and-push.outputs.aws_account_id }}
 
       - name: Rollback if verification failed
         if: steps.verification.outcome != 'success'
