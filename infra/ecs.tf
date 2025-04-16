@@ -106,7 +106,7 @@ resource "aws_ecs_task_definition" "backend" {
       secrets = [
         {
           name      = "MONGO_URI"
-          valueFrom = var.mongo_uri_secret_arn
+          valueFrom = "${var.mongo_uri_secret_arn}:MONGO_URI_SECRET_ARN::"
         }
       ]
     }
