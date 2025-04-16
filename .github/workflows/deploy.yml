@@ -247,6 +247,12 @@ jobs:
         working-directory: ./ansible
         shell: bash
         run: |
+          # Access outputs from previous jobs via needs context
+          AWS_ACCOUNT_ID="${{ needs.build-and-push.outputs.aws_account_id }}"
+          FRONTEND_IMAGE_TAG="${{ needs.build-and-push.outputs.frontend_image_tag }}"
+          BACKEND_IMAGE_TAG="${{ needs.build-and-push.outputs.backend_image_tag }}"
+          ALB_DNS_NAME="${{ needs.deploy-infrastructure.outputs.alb_dns_name }}"
+
           # Construct repository URLs
           FRONTEND_REPO_URL="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY_FRONTEND}"
           BACKEND_REPO_URL="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY_BACKEND}"
@@ -255,21 +261,19 @@ jobs:
           echo "ALB DNS Name: $ALB_DNS_NAME"
           echo "Frontend Image: $FRONTEND_REPO_URL:$FRONTEND_IMAGE_TAG"
           echo "Backend Image: $BACKEND_REPO_URL:$BACKEND_IMAGE_TAG"
+          echo "AWS Account ID: $AWS_ACCOUNT_ID" # Added for verification
 
-          ansible-playbook main.yml -e "action=full aws_region=${{ env.AWS_REGION }} project_name=${{ env.PROJECT_NAME }} alb_dns_name=$ALB_DNS_NAME frontend_image=$FRONTEND_REPO_URL:$FRONTEND_IMAGE_TAG backend_image=$BACKEND_REPO_URL:$BACKEND_IMAGE_TAG"
-        continue-on-error: true
-        env:
-          ALB_DNS_NAME: ${{ needs.deploy-infrastructure.outputs.alb_dns_name }}
-          FRONTEND_IMAGE_TAG: ${{ needs.build-and-push.outputs.frontend_image_tag }}
-          BACKEND_IMAGE_TAG: ${{ needs.build-and-push.outputs.backend_image_tag }}
-          AWS_ACCOUNT_ID: ${{ needs.build-and-push.outputs.aws_account_id }}
+          ansible-playbook main.yml -e "action=full aws_region=${AWS_REGION} project_name=${PROJECT_NAME} alb_dns_name=$ALB_DNS_NAME frontend_image=$FRONTEND_REPO_URL:$FRONTEND_IMAGE_TAG backend_image=$BACKEND_REPO_URL:$BACKEND_IMAGE_TAG"
 
-      - name: Rollback if verification failed
-        if: steps.verification.outcome != 'success'
+      - name: Rollback on failure # Optional: Add a step to trigger rollback if verification fails
+        if: failure() && steps.verification.outcome == 'failure'
         working-directory: ./ansible
         shell: bash
         run: |
-          ansible-playbook main.yml -e "action=rollback aws_region=${{ env.AWS_REGION }} project_name=${{ env.PROJECT_NAME }}"
+          echo "Smoke tests failed. Initiating rollback..."
+          # Add logic here to get previous task definition ARNs if needed for rollback.yml
+          # For now, just running the rollback action as defined.
+          ansible-playbook main.yml -e "action=rollback aws_region=${AWS_REGION} project_name=${PROJECT_NAME}"
 
       - name: Fail workflow if verification failed
         if: steps.verification.outcome != 'success'

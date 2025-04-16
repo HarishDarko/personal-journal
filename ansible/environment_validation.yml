@@ -1,99 +1,90 @@
----
-- name: Validate AWS Environment for Personal Journal Application
-  hosts: localhost
-  connection: local
-  gather_facts: no
-  
-  vars:
-    aws_region: "{{ aws_region | default('us-east-1') }}"
-    project_name: "{{ project_name | default('personal-journal') }}"
-    environment: "{{ environment | default('dev') }}"
-  
-  tasks:
-    - name: Set AWS region for AWS CLI commands
-      set_fact:
-        aws_cli_region_param: "--region {{ aws_region }}"
+# Tasks to validate the AWS environment
+# Included via include_tasks, so no play definition needed here.
 
-    - name: Check if VPC exists
-      shell: aws ec2 describe-vpcs --filters "Name=tag:Name,Values={{ project_name }}-vpc" {{ aws_cli_region_param }}
-      register: vpc_result
-      ignore_errors: yes
-      changed_when: false
+- name: Set AWS region for AWS CLI commands
+  set_fact:
+    aws_cli_region_param: "--region {{ aws_region }}"
 
-    - name: Display VPC status
-      debug:
-        msg: "VPC {{ 'exists' if (vpc_result.rc == 0 and (vpc_result.stdout | from_json).Vpcs | length > 0) else 'does not exist' }}"
+- name: Check if VPC exists
+  shell: aws ec2 describe-vpcs --filters "Name=tag:Name,Values={{ project_name }}-vpc" {{ aws_cli_region_param }}
+  register: vpc_result
+  ignore_errors: yes
+  changed_when: false
 
-    - name: Check if ECS cluster exists
-      shell: aws ecs describe-clusters --clusters {{ project_name }}-cluster {{ aws_cli_region_param }}
-      register: ecs_result
-      ignore_errors: yes
-      changed_when: false
+- name: Display VPC status
+  debug:
+    msg: "VPC {{ 'exists' if (vpc_result.rc == 0 and (vpc_result.stdout | from_json).Vpcs | length > 0) else 'does not exist' }}"
 
-    - name: Display ECS cluster status
-      debug:
-        msg: "ECS Cluster {{ 'exists' if (ecs_result.rc == 0 and (ecs_result.stdout | from_json).clusters | length > 0) else 'does not exist' }}"
+- name: Check if ECS cluster exists
+  shell: aws ecs describe-clusters --clusters {{ project_name }}-cluster {{ aws_cli_region_param }}
+  register: ecs_result
+  ignore_errors: yes
+  changed_when: false
 
-    - name: Check if ALB exists
-      shell: aws elbv2 describe-load-balancers --names {{ project_name }}-alb {{ aws_cli_region_param }}
-      register: alb_result
-      ignore_errors: yes
-      changed_when: false
+- name: Display ECS cluster status
+  debug:
+    msg: "ECS Cluster {{ 'exists' if (ecs_result.rc == 0 and (ecs_result.stdout | from_json).clusters | length > 0) else 'does not exist' }}"
 
-    - name: Display ALB status
-      debug:
-        msg: "ALB {{ 'exists' if (alb_result.rc == 0 and (alb_result.stdout | from_json).LoadBalancers | length > 0) else 'does not exist' }}"
+- name: Check if ALB exists
+  shell: aws elbv2 describe-load-balancers --names {{ project_name }}-alb {{ aws_cli_region_param }}
+  register: alb_result
+  ignore_errors: yes
+  changed_when: false
 
-    - name: Check if ECR repositories exist
-      shell: aws ecr describe-repositories --repository-names {{ project_name }}-frontend {{ project_name }}-backend {{ aws_cli_region_param }}
-      register: ecr_result
-      ignore_errors: yes
-      changed_when: false
+- name: Display ALB status
+  debug:
+    msg: "ALB {{ 'exists' if (alb_result.rc == 0 and (alb_result.stdout | from_json).LoadBalancers | length > 0) else 'does not exist' }}"
 
-    - name: Display ECR repositories status
-      debug:
-        msg: "ECR repositories {{ 'exist' if (ecr_result.rc == 0 and (ecr_result.stdout | from_json).repositories | length == 2) else 'do not exist' }}"
+- name: Check if ECR repositories exist
+  shell: aws ecr describe-repositories --repository-names {{ project_name }}-frontend {{ project_name }}-backend {{ aws_cli_region_param }}
+  register: ecr_result
+  ignore_errors: yes
+  changed_when: false
 
-    - name: Check ECS services status
-      shell: aws ecs describe-services --cluster {{ project_name }}-cluster --services {{ project_name }}-frontend-service {{ project_name }}-backend-service {{ aws_cli_region_param }}
-      register: services_result
-      ignore_errors: yes
-      changed_when: false
+- name: Display ECR repositories status
+  debug:
+    msg: "ECR repositories {{ 'exist' if (ecr_result.rc == 0 and (ecr_result.stdout | from_json).repositories | length == 2) else 'do not exist' }}"
 
-    - name: Display ECS services status
-      debug:
-        msg: "ECS services {{ 'exist' if (services_result.rc == 0 and (services_result.stdout | from_json).services | length == 2) else 'do not exist' }}"
-      
-    - name: Get ECS services details
-      debug:
-        msg: |
-          Frontend service status: {{ (services_result.stdout | from_json).services[0].status }}
-          Frontend service desired count: {{ (services_result.stdout | from_json).services[0].desiredCount }}
-          Frontend service running count: {{ (services_result.stdout | from_json).services[0].runningCount }}
-          Backend service status: {{ (services_result.stdout | from_json).services[1].status }}
-          Backend service desired count: {{ (services_result.stdout | from_json).services[1].desiredCount }}
-          Backend service running count: {{ (services_result.stdout | from_json).services[1].runningCount }}
-      when: services_result.rc == 0 and (services_result.stdout | from_json).services | length == 2
+- name: Check ECS services status
+  shell: aws ecs describe-services --cluster {{ project_name }}-cluster --services {{ project_name }}-frontend-service {{ project_name }}-backend-service {{ aws_cli_region_param }}
+  register: services_result
+  ignore_errors: yes
+  changed_when: false
 
-    - name: Check CloudWatch logs
-      shell: aws logs describe-log-groups --log-group-name-prefix /ecs/{{ project_name }} {{ aws_cli_region_param }}
-      register: logs_result
-      ignore_errors: yes
-      changed_when: false
+- name: Display ECS services status
+  debug:
+    msg: "ECS services {{ 'exist' if (services_result.rc == 0 and (services_result.stdout | from_json).services | length == 2) else 'do not exist' }}"
 
-    - name: Display CloudWatch logs status
-      debug:
-        msg: "CloudWatch logs {{ 'exist' if (logs_result.rc == 0 and (logs_result.stdout | from_json).logGroups | length > 0) else 'do not exist' }}"
+- name: Get ECS services details
+  debug:
+    msg: |
+      Frontend service status: {{ (services_result.stdout | from_json).services[0].status }}
+      Frontend service desired count: {{ (services_result.stdout | from_json).services[0].desiredCount }}
+      Frontend service running count: {{ (services_result.stdout | from_json).services[0].runningCount }}
+      Backend service status: {{ (services_result.stdout | from_json).services[1].status }}
+      Backend service desired count: {{ (services_result.stdout | from_json).services[1].desiredCount }}
+      Backend service running count: {{ (services_result.stdout | from_json).services[1].runningCount }}
+  when: services_result.rc == 0 and (services_result.stdout | from_json).services | length == 2
 
-    - name: Validate environment
-      assert:
-        that:
-          - vpc_result.rc == 0 and (vpc_result.stdout | from_json).Vpcs | length > 0
-          - ecs_result.rc == 0 and (ecs_result.stdout | from_json).clusters | length > 0
-          - alb_result.rc == 0 and (alb_result.stdout | from_json).LoadBalancers | length > 0
-          - ecr_result.rc == 0 and (ecr_result.stdout | from_json).repositories | length == 2
-          - services_result.rc == 0 and (services_result.stdout | from_json).services | length == 2
-          - logs_result.rc == 0 and (logs_result.stdout | from_json).logGroups | length > 0
-        fail_msg: "Environment validation failed. Some resources are missing."
-        success_msg: "Environment validation passed. All required resources exist."
-      ignore_errors: yes
+- name: Check CloudWatch logs
+  shell: aws logs describe-log-groups --log-group-name-prefix /ecs/{{ project_name }} {{ aws_cli_region_param }}
+  register: logs_result
+  ignore_errors: yes
+  changed_when: false
+
+- name: Display CloudWatch logs status
+  debug:
+    msg: "CloudWatch logs {{ 'exist' if (logs_result.rc == 0 and (logs_result.stdout | from_json).logGroups | length > 0) else 'do not exist' }}"
+
+- name: Validate environment
+  assert:
+    that:
+      - vpc_result.rc == 0 and (vpc_result.stdout | from_json).Vpcs | length > 0
+      - ecs_result.rc == 0 and (ecs_result.stdout | from_json).clusters | length > 0
+      - alb_result.rc == 0 and (alb_result.stdout | from_json).LoadBalancers | length > 0
+      - ecr_result.rc == 0 and (ecr_result.stdout | from_json).repositories | length == 2
+      - services_result.rc == 0 and (services_result.stdout | from_json).services | length == 2
+      - logs_result.rc == 0 and (logs_result.stdout | from_json).logGroups | length > 0
+    fail_msg: "Environment validation failed. Some resources are missing."
+    success_msg: "Environment validation passed. All required resources exist."
+  ignore_errors: yes

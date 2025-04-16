@@ -1,93 +1,98 @@
----
-- name: Verify Deployment of Personal Journal Application
-  hosts: localhost
-  connection: local
-  gather_facts: no
-  
-  vars:
-    aws_region: "{{ aws_region | default('us-east-1') }}"
-    project_name: "{{ project_name | default('personal-journal') }}"
-    environment: "{{ environment | default('dev') }}"
-    alb_dns_name: "{{ alb_dns_name }}"
-    expected_frontend_image: "{{ expected_frontend_image }}"
-    expected_backend_image: "{{ expected_backend_image }}"
-  
-  tasks:
-    - name: Set AWS region for AWS CLI commands
-      set_fact:
-        aws_cli_region_param: "--region {{ aws_region }}"
+# Tasks to verify the deployment
+# Included via include_tasks, so no play definition needed here.
 
-    - name: Get frontend task definition
-      shell: aws ecs describe-services --cluster {{ project_name }}-cluster --services {{ project_name }}-frontend-service {{ aws_cli_region_param }} --query 'services[0].taskDefinition' --output text
-      register: frontend_task_def_arn
-      changed_when: false
+- name: Set AWS region for AWS CLI commands
+  set_fact:
+    aws_cli_region_param: "--region {{ aws_region }}"
 
-    - name: Get backend task definition
-      shell: aws ecs describe-services --cluster {{ project_name }}-cluster --services {{ project_name }}-backend-service {{ aws_cli_region_param }} --query 'services[0].taskDefinition' --output text
-      register: backend_task_def_arn
-      changed_when: false
+- name: Get frontend task definition ARN from service
+  shell: aws ecs describe-services --cluster {{ project_name }}-cluster --services {{ project_name }}-frontend-service {{ aws_cli_region_param }} --query 'services[0].taskDefinition' --output text
+  register: frontend_task_def_arn
+  changed_when: false
 
-    - name: Get frontend task definition details
-      shell: aws ecs describe-task-definition --task-definition {{ frontend_task_def_arn.stdout }} {{ aws_cli_region_param }}
-      register: frontend_task_def
-      changed_when: false
+- name: Get backend task definition ARN from service
+  shell: aws ecs describe-services --cluster {{ project_name }}-cluster --services {{ project_name }}-backend-service {{ aws_cli_region_param }} --query 'services[0].taskDefinition' --output text
+  register: backend_task_def_arn
+  changed_when: false
 
-    - name: Get backend task definition details
-      shell: aws ecs describe-task-definition --task-definition {{ backend_task_def_arn.stdout }} {{ aws_cli_region_param }}
-      register: backend_task_def
-      changed_when: false
+- name: Get frontend task definition details
+  shell: aws ecs describe-task-definition --task-definition {{ frontend_task_def_arn.stdout }} {{ aws_cli_region_param }}
+  register: frontend_task_def
+  changed_when: false
+  when: frontend_task_def_arn.stdout != ""
 
-    - name: Extract frontend image
-      set_fact:
-        frontend_image: "{{ (frontend_task_def.stdout | from_json).taskDefinition.containerDefinitions[0].image }}"
+- name: Get backend task definition details
+  shell: aws ecs describe-task-definition --task-definition {{ backend_task_def_arn.stdout }} {{ aws_cli_region_param }}
+  register: backend_task_def
+  changed_when: false
+  when: backend_task_def_arn.stdout != ""
 
-    - name: Extract backend image
-      set_fact:
-        backend_image: "{{ (backend_task_def.stdout | from_json).taskDefinition.containerDefinitions[0].image }}"
+- name: Extract frontend image
+  set_fact:
+    frontend_image: "{{ (frontend_task_def.stdout | from_json).taskDefinition.containerDefinitions[0].image }}"
+  when: frontend_task_def.rc == 0
 
-    - name: Display deployed images
-      debug:
-        msg: |
-          Frontend image: {{ frontend_image }}
-          Backend image: {{ backend_image }}
-          Expected frontend image: {{ expected_frontend_image }}
-          Expected backend image: {{ expected_backend_image }}
+- name: Extract backend image
+  set_fact:
+    backend_image: "{{ (backend_task_def.stdout | from_json).taskDefinition.containerDefinitions[0].image }}"
+  when: backend_task_def.rc == 0
 
-    - name: Verify deployed images match expected images
-      assert:
-        that:
-          - frontend_image == expected_frontend_image
-          - backend_image == expected_backend_image
-        fail_msg: "Deployed images do not match expected images."
-        success_msg: "Deployed images match expected images."
-      ignore_errors: yes
+- name: Display deployed images
+  debug:
+    msg: |
+      Current Frontend image: {{ frontend_image | default('N/A') }}
+      Current Backend image: {{ backend_image | default('N/A') }}
+      Expected Frontend image: {{ expected_frontend_image }}
+      Expected Backend image: {{ expected_backend_image }}
 
-    - name: Check ALB health
-      shell: aws elbv2 describe-target-health --target-group-arn $(aws elbv2 describe-target-groups --names {{ project_name }}-frontend-tg {{ aws_cli_region_param }} --query 'TargetGroups[0].TargetGroupArn' --output text) {{ aws_cli_region_param }}
-      register: frontend_target_health
-      changed_when: false
+- name: Verify deployed images match expected images
+  assert:
+    that:
+      - frontend_image is defined and frontend_image == expected_frontend_image
+      - backend_image is defined and backend_image == expected_backend_image
+    fail_msg: "Deployed images do not match expected images."
+    success_msg: "Deployed images match expected images."
+  ignore_errors: yes
 
-    - name: Display frontend target health
-      debug:
-        msg: "Frontend target health: {{ (frontend_target_health.stdout | from_json).TargetHealthDescriptions | map(attribute='TargetHealth.State') | list }}"
+- name: Get frontend target group ARN
+  shell: aws elbv2 describe-target-groups --names {{ project_name }}-frontend-tg {{ aws_cli_region_param }} --query 'TargetGroups[0].TargetGroupArn' --output text
+  register: frontend_tg_arn
+  changed_when: false
 
-    - name: Check backend target health
-      shell: aws elbv2 describe-target-health --target-group-arn $(aws elbv2 describe-target-groups --names {{ project_name }}-backend-tg {{ aws_cli_region_param }} --query 'TargetGroups[0].TargetGroupArn' --output text) {{ aws_cli_region_param }}
-      register: backend_target_health
-      changed_when: false
+- name: Check frontend target health
+  shell: aws elbv2 describe-target-health --target-group-arn {{ frontend_tg_arn.stdout }} {{ aws_cli_region_param }}
+  register: frontend_target_health
+  changed_when: false
+  when: frontend_tg_arn.stdout != ""
 
-    - name: Display backend target health
-      debug:
-        msg: "Backend target health: {{ (backend_target_health.stdout | from_json).TargetHealthDescriptions | map(attribute='TargetHealth.State') | list }}"
+- name: Display frontend target health
+  debug:
+    msg: "Frontend target health: {{ (frontend_target_health.stdout | from_json).TargetHealthDescriptions | map(attribute='TargetHealth.State') | list }}"
+  when: frontend_target_health.rc == 0
 
-    - name: Verify target health
-      assert:
-        that:
-          - "'healthy' in ((frontend_target_health.stdout | from_json).TargetHealthDescriptions | map(attribute='TargetHealth.State') | list)"
-          - "'healthy' in ((backend_target_health.stdout | from_json).TargetHealthDescriptions | map(attribute='TargetHealth.State') | list)"
-        fail_msg: "Target health check failed. Some targets are not healthy."
-        success_msg: "Target health check passed. Targets are healthy."
-      ignore_errors: yes
+- name: Get backend target group ARN
+  shell: aws elbv2 describe-target-groups --names {{ project_name }}-backend-tg {{ aws_cli_region_param }} --query 'TargetGroups[0].TargetGroupArn' --output text
+  register: backend_tg_arn
+  changed_when: false
 
-    - name: Run smoke tests
-      include_tasks: smoke_test.yml
+- name: Check backend target health
+  shell: aws elbv2 describe-target-health --target-group-arn {{ backend_tg_arn.stdout }} {{ aws_cli_region_param }}
+  register: backend_target_health
+  changed_when: false
+  when: backend_tg_arn.stdout != ""
+
+- name: Display backend target health
+  debug:
+    msg: "Backend target health: {{ (backend_target_health.stdout | from_json).TargetHealthDescriptions | map(attribute='TargetHealth.State') | list }}"
+  when: backend_target_health.rc == 0
+
+- name: Verify target health
+  assert:
+    that:
+      - frontend_target_health.rc == 0
+      - "'healthy' in ((frontend_target_health.stdout | from_json).TargetHealthDescriptions | map(attribute='TargetHealth.State') | list)"
+      - backend_target_health.rc == 0
+      - "'healthy' in ((backend_target_health.stdout | from_json).TargetHealthDescriptions | map(attribute='TargetHealth.State') | list)"
+    fail_msg: "Target health check failed. Some targets are not healthy."
+    success_msg: "Target health check passed. Targets are healthy."
+  ignore_errors: yes

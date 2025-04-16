@@ -1,215 +1,199 @@
----
-- name: Smoke Test for Personal Journal Application
-  hosts: localhost
-  connection: local
-  gather_facts: yes
+- name: Set base URL
+  set_fact:
+    base_url: "http://{{ alb_dns_name }}"
 
-  vars:
-    alb_dns_name: "{{ alb_dns_name }}"
-    max_retries: 10
-    retry_delay: 30  # seconds
-    test_user:
-      email: "test-{{ ansible_date_time.epoch }}@example.com"
-      password: "TestPassword123!"
-      name: "Test User"
+- name: Print test information
+  debug:
+    msg: "Running smoke tests against {{ base_url }}"
 
-  tasks:
-    - name: Set base URL
-      set_fact:
-        base_url: "http://{{ alb_dns_name }}"
+- name: Wait for frontend to be available
+  uri:
+    url: "{{ base_url }}/"
+    method: GET
+    status_code: 200
+    return_content: yes
+    validate_certs: no
+    follow_redirects: yes
+    timeout: 10
+  register: frontend_response
+  until: frontend_response.status == 200
+  retries: "{{ max_retries }}"
+  delay: "{{ retry_delay }}"
 
-    - name: Print test information
-      debug:
-        msg: "Running smoke tests against {{ base_url }}"
+- name: Display frontend response
+  debug:
+    msg: "Frontend is accessible. Status code: {{ frontend_response.status }}"
 
-    - name: Wait for frontend to be available
-      uri:
-        url: "{{ base_url }}/"
-        method: GET
-        status_code: 200
-        return_content: yes
-        validate_certs: no
-        follow_redirects: yes
-        timeout: 10
-      register: frontend_response
-      until: frontend_response.status == 200
-      retries: "{{ max_retries }}"
-      delay: "{{ retry_delay }}"
+- name: Wait for backend API to be available
+  uri:
+    url: "{{ base_url }}/api"
+    method: GET
+    status_code: 200
+    return_content: yes
+    validate_certs: no
+    follow_redirects: yes
+    timeout: 10
+  register: backend_response
+  until: backend_response.status == 200
+  retries: "{{ max_retries }}"
+  delay: "{{ retry_delay }}"
 
-    - name: Display frontend response
-      debug:
-        msg: "Frontend is accessible. Status code: {{ frontend_response.status }}"
+- name: Display backend response
+  debug:
+    msg: "Backend API is accessible. Status code: {{ backend_response.status }}"
 
-    - name: Wait for backend API to be available
-      uri:
-        url: "{{ base_url }}/api"
-        method: GET
-        status_code: 200
-        return_content: yes
-        validate_certs: no
-        follow_redirects: yes
-        timeout: 10
-      register: backend_response
-      until: backend_response.status == 200
-      retries: "{{ max_retries }}"
-      delay: "{{ retry_delay }}"
+- name: Verify backend health check endpoint
+  uri:
+    url: "{{ base_url }}/api/health"
+    method: GET
+    status_code: 200
+    return_content: yes
+    validate_certs: no
+    follow_redirects: yes
+    timeout: 10
+  register: health_response
+  until: health_response.status == 200
+  retries: "{{ max_retries }}"
+  delay: "{{ retry_delay }}"
 
-    - name: Display backend response
-      debug:
-        msg: "Backend API is accessible. Status code: {{ backend_response.status }}"
+- name: Display health check response
+  debug:
+    msg: |
+      Health check endpoint is accessible. Status code: {{ health_response.status }}
+      Environment: {{ health_response.json.environment }}
+      Timestamp: {{ health_response.json.timestamp }}
 
-    - name: Verify backend health check endpoint
-      uri:
-        url: "{{ base_url }}/api/health"
-        method: GET
-        status_code: 200
-        return_content: yes
-        validate_certs: no
-        follow_redirects: yes
-        timeout: 10
-      register: health_response
-      until: health_response.status == 200
-      retries: "{{ max_retries }}"
-      delay: "{{ retry_delay }}"
+# Functional tests
+- name: Register a test user
+  uri:
+    url: "{{ base_url }}/api/auth/register"
+    method: POST
+    body_format: json
+    body:
+      name: "{{ test_user.name }}"
+      email: "{{ test_user.email }}"
+      password: "{{ test_user.password }}"
+    status_code: 201
+    return_content: yes
+    validate_certs: no
+    headers:
+      Content-Type: "application/json"
+  register: register_response
+  ignore_errors: yes
 
-    - name: Display health check response
-      debug:
-        msg: |
-          Health check endpoint is accessible. Status code: {{ health_response.status }}
-          Environment: {{ health_response.json.environment }}
-          Timestamp: {{ health_response.json.timestamp }}
+- name: Display registration response
+  debug:
+    msg: "User registration response: {{ register_response }}"
+  when: register_response is defined
 
-    # Functional tests
-    - name: Register a test user
-      uri:
-        url: "{{ base_url }}/api/auth/register"
-        method: POST
-        body_format: json
-        body:
-          name: "{{ test_user.name }}"
-          email: "{{ test_user.email }}"
-          password: "{{ test_user.password }}"
-        status_code: 201
-        return_content: yes
-        validate_certs: no
-        headers:
-          Content-Type: "application/json"
-      register: register_response
-      ignore_errors: yes
+- name: Login with test user
+  uri:
+    url: "{{ base_url }}/api/auth/login"
+    method: POST
+    body_format: json
+    body:
+      email: "{{ test_user.email }}"
+      password: "{{ test_user.password }}"
+    status_code: 200
+    return_content: yes
+    validate_certs: no
+    headers:
+      Content-Type: "application/json"
+  register: login_response
+  ignore_errors: yes
+  when: register_response is defined and register_response.status == 201
 
-    - name: Display registration response
-      debug:
-        msg: "User registration response: {{ register_response }}"
-      when: register_response is defined
+- name: Set auth token if login successful
+  set_fact:
+    auth_token: "{{ login_response.json.token }}"
+  when: login_response is defined and login_response.status == 200
 
-    - name: Login with test user
-      uri:
-        url: "{{ base_url }}/api/auth/login"
-        method: POST
-        body_format: json
-        body:
-          email: "{{ test_user.email }}"
-          password: "{{ test_user.password }}"
-        status_code: 200
-        return_content: yes
-        validate_certs: no
-        headers:
-          Content-Type: "application/json"
-      register: login_response
-      ignore_errors: yes
-      when: register_response is defined and register_response.status == 201
+- name: Create a test journal entry
+  uri:
+    url: "{{ base_url }}/api/journal"
+    method: POST
+    body_format: json
+    body:
+      title: "Test Journal Entry"
+      content: "This is a test journal entry created by Ansible smoke tests."
+      mood: "happy"
+      tags: ["test", "ansible", "automation"]
+    status_code: 201
+    return_content: yes
+    validate_certs: no
+    headers:
+      Content-Type: "application/json"
+      Authorization: "Bearer {{ auth_token }}"
+  register: create_journal_response
+  ignore_errors: yes
+  when: auth_token is defined
 
-    - name: Set auth token if login successful
-      set_fact:
-        auth_token: "{{ login_response.json.token }}"
-      when: login_response is defined and login_response.status == 200
+- name: Set journal entry ID if creation successful
+  set_fact:
+    journal_id: "{{ create_journal_response.json.data._id }}"
+  when: create_journal_response is defined and create_journal_response.status == 201
 
-    - name: Create a test journal entry
-      uri:
-        url: "{{ base_url }}/api/journal"
-        method: POST
-        body_format: json
-        body:
-          title: "Test Journal Entry"
-          content: "This is a test journal entry created by Ansible smoke tests."
-          mood: "happy"
-          tags: ["test", "ansible", "automation"]
-        status_code: 201
-        return_content: yes
-        validate_certs: no
-        headers:
-          Content-Type: "application/json"
-          Authorization: "Bearer {{ auth_token }}"
-      register: create_journal_response
-      ignore_errors: yes
-      when: auth_token is defined
+- name: Get journal entries
+  uri:
+    url: "{{ base_url }}/api/journal"
+    method: GET
+    return_content: yes
+    validate_certs: no
+    headers:
+      Authorization: "Bearer {{ auth_token }}"
+  register: get_journals_response
+  ignore_errors: yes
+  when: auth_token is defined
 
-    - name: Set journal entry ID if creation successful
-      set_fact:
-        journal_id: "{{ create_journal_response.json.data._id }}"
-      when: create_journal_response is defined and create_journal_response.status == 201
+- name: Display journal entries
+  debug:
+    msg: "Found {{ get_journals_response.json.count }} journal entries"
+  when: get_journals_response is defined and get_journals_response.status == 200
 
-    - name: Get journal entries
-      uri:
-        url: "{{ base_url }}/api/journal"
-        method: GET
-        return_content: yes
-        validate_certs: no
-        headers:
-          Authorization: "Bearer {{ auth_token }}"
-      register: get_journals_response
-      ignore_errors: yes
-      when: auth_token is defined
+- name: Delete test journal entry
+  uri:
+    url: "{{ base_url }}/api/journal/{{ journal_id }}"
+    method: DELETE
+    status_code: 200
+    return_content: yes
+    validate_certs: no
+    headers:
+      Authorization: "Bearer {{ auth_token }}"
+  register: delete_journal_response
+  ignore_errors: yes
+  when: journal_id is defined
 
-    - name: Display journal entries
-      debug:
-        msg: "Found {{ get_journals_response.json.count }} journal entries"
-      when: get_journals_response is defined and get_journals_response.status == 200
+- name: Logout test user
+  uri:
+    url: "{{ base_url }}/api/auth/logout"
+    method: GET
+    status_code: 200
+    return_content: yes
+    validate_certs: no
+    headers:
+      Authorization: "Bearer {{ auth_token }}"
+  register: logout_response
+  ignore_errors: yes
+  when: auth_token is defined
 
-    - name: Delete test journal entry
-      uri:
-        url: "{{ base_url }}/api/journal/{{ journal_id }}"
-        method: DELETE
-        status_code: 200
-        return_content: yes
-        validate_certs: no
-        headers:
-          Authorization: "Bearer {{ auth_token }}"
-      register: delete_journal_response
-      ignore_errors: yes
-      when: journal_id is defined
+- name: Verify that the application is working correctly
+  assert:
+    that:
+      - frontend_response.status == 200
+      - backend_response.status == 200
+      - health_response.status == 200
+    fail_msg: "Basic smoke tests failed. Application is not working correctly."
+    success_msg: "Basic smoke tests passed. Application is working correctly."
 
-    - name: Logout test user
-      uri:
-        url: "{{ base_url }}/api/auth/logout"
-        method: GET
-        status_code: 200
-        return_content: yes
-        validate_certs: no
-        headers:
-          Authorization: "Bearer {{ auth_token }}"
-      register: logout_response
-      ignore_errors: yes
-      when: auth_token is defined
-
-    - name: Verify that the application is working correctly
-      assert:
-        that:
-          - frontend_response.status == 200
-          - backend_response.status == 200
-          - health_response.status == 200
-        fail_msg: "Basic smoke tests failed. Application is not working correctly."
-        success_msg: "Basic smoke tests passed. Application is working correctly."
-
-    - name: Verify functional tests (if performed)
-      assert:
-        that:
-          - register_response is not defined or register_response.status == 201
-          - login_response is not defined or login_response.status == 200
-          - create_journal_response is not defined or create_journal_response.status == 201
-          - get_journals_response is not defined or get_journals_response.status == 200
-          - delete_journal_response is not defined or delete_journal_response.status == 200
-          - logout_response is not defined or logout_response.status == 200
-        fail_msg: "Functional tests failed. Some API endpoints are not working correctly."
-        success_msg: "Functional tests passed. API endpoints are working correctly."
-      ignore_errors: yes
+- name: Verify functional tests (if performed)
+  assert:
+    that:
+      - register_response is not defined or register_response.status == 201
+      - login_response is not defined or login_response.status == 200
+      - create_journal_response is not defined or create_journal_response.status == 201
+      - get_journals_response is not defined or get_journals_response.status == 200
+      - delete_journal_response is not defined or delete_journal_response.status == 200
+      - logout_response is not defined or logout_response.status == 200
+    fail_msg: "Functional tests failed. Some API endpoints are not working correctly."
+    success_msg: "Functional tests passed. API endpoints are working correctly."
+  ignore_errors: yes
