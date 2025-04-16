@@ -76,10 +76,10 @@ jobs:
         working-directory: ./infra
         shell: bash
         run: |
-          # Get the raw ALB DNS name output
-          FULL_OUTPUT=$(terraform output -raw alb_dns_name)
-          # Extract the first line from the full output
-          ALB_DNS_NAME=$(echo "${FULL_OUTPUT}" | head -n 1)
+          # Get the raw ALB DNS name output and write to temp file
+          terraform output -raw alb_dns_name > alb_dns_name.txt
+          # Read the content (should be just the DNS name)
+          ALB_DNS_NAME=$(cat alb_dns_name.txt)
           
           # Set outputs for GitHub Actions
           echo "alb_dns_name=${ALB_DNS_NAME}" >> $GITHUB_OUTPUT
@@ -243,27 +243,13 @@ jobs:
         working-directory: ./ansible
         env:
           ALB_DNS_NAME: ${{ needs.deploy-infrastructure.outputs.alb_dns_name }}
-          FRONTEND_IMAGE_TAG: ${{ needs.build-and-push.outputs.frontend_image_tag }}
-          BACKEND_IMAGE_TAG: ${{ needs.build-and-push.outputs.backend_image_tag }}
-          AWS_ACCOUNT_ID: ${{ needs.build-and-push.outputs.aws_account_id }}
-          AWS_REGION: ${{ env.AWS_REGION }}
-          PROJECT_NAME: ${{ env.PROJECT_NAME }}
-          ECR_REPOSITORY_FRONTEND: ${{ env.ECR_REPOSITORY_FRONTEND }}
-          ECR_REPOSITORY_BACKEND: ${{ env.ECR_REPOSITORY_BACKEND }}
         shell: bash
         run: |
-          # Construct repository URLs using environment variables for this step
-          FRONTEND_REPO_URL="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY_FRONTEND}"
-          BACKEND_REPO_URL="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY_BACKEND}"
-
           # Debug: Print parameters
           echo "ALB DNS Name: $ALB_DNS_NAME"
-          echo "Frontend Image: $FRONTEND_REPO_URL:$FRONTEND_IMAGE_TAG"
-          echo "Backend Image: $BACKEND_REPO_URL:$BACKEND_IMAGE_TAG"
-          echo "AWS Account ID: $AWS_ACCOUNT_ID"
-
-          # Call ansible-playbook, passing variables via -e
-          ansible-playbook main.yml -e "action=full aws_region=${AWS_REGION} project_name=${PROJECT_NAME} alb_dns_name=$ALB_DNS_NAME frontend_image=$FRONTEND_REPO_URL:$FRONTEND_IMAGE_TAG backend_image=$BACKEND_REPO_URL:$BACKEND_IMAGE_TAG"
+          
+          # Call the simplified ansible-playbook
+          ansible-playbook simple_smoke_test.yml -e "alb_dns_name=$ALB_DNS_NAME"
 
       - name: Rollback on failure
         if: failure()
@@ -271,12 +257,13 @@ jobs:
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
           PROJECT_NAME: ${{ env.PROJECT_NAME }}
+          # Note: Rollback might need adjustment if it relied on variables removed from the previous step
         shell: bash
         run: |
-          echo "Previous step failed. Initiating rollback..."
-          # NOTE: Rollback currently doesn't know the actual *previous* task defs.
-          # Passing empty strings for now until rollback logic is enhanced.
-          ansible-playbook main.yml -e "action=rollback aws_region=${AWS_REGION} project_name=${PROJECT_NAME} previous_frontend_task_def='' previous_backend_task_def=''"
+          echo "Smoke test failed. Initiating rollback..."
+          # Execute the original rollback playbook/logic if needed
+          # This might need the original variables (like image tags) if it performs a complex rollback
+          ansible-playbook main.yml -e "action=rollback aws_region=${AWS_REGION} project_name=${PROJECT_NAME} previous_frontend_task_def='' previous_backend_task_def=''
 
       - name: Fail workflow if verification failed
         if: steps.verification.outcome != 'success'

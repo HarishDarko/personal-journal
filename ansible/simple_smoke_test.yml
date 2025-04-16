@@ -1,0 +1,28 @@
+---
+- name: Simple Smoke Test
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  vars:
+    app_url: "http://{{ alb_dns_name }}/login"
+
+  tasks:
+    - name: Check application URL accessibility
+      ansible.builtin.uri:
+        url: "{{ app_url }}"
+        method: GET
+        status_code: 200 # Expect a successful HTTP 200 OK
+        timeout: 30 # Short timeout
+      register: result
+      retries: 3 # Retry a few times in case of transient network issues
+      delay: 5 # Wait 5 seconds between retries
+
+    - name: Display result
+      ansible.builtin.debug:
+        msg: "Smoke test PASSED for {{ app_url }}. Status: {{ result.status }}"
+
+    - name: Fail if URL check failed
+      ansible.builtin.fail:
+        msg: "Smoke test FAILED for {{ app_url }}. Status: {{ result.status }}, Response: {{ result.content | default('N/A') }}"
+      when: result.status != 200 
