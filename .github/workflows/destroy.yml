@@ -1,0 +1,78 @@
+name: Manually Destroy Infrastructure
+
+on:
+  workflow_dispatch:  # Allows manual triggering from the GitHub Actions UI
+
+env:
+  AWS_REGION: us-east-1 # Make sure this matches your deploy workflow
+  TERRAFORM_VERSION: 1.5.7 # Make sure this matches your deploy workflow
+  TF_STATE_BUCKET: personal-journal-terraform-state # Match deploy workflow
+  TF_LOCK_TABLE: personal-journal-terraform-locks   # Match deploy workflow
+
+jobs:
+  destroy-infrastructure:
+    name: Destroy Infrastructure
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform Init
+        working-directory: ./infra
+        shell: bash
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ env.TF_STATE_BUCKET }}" \
+            -backend-config="key=terraform/state/personal-journal.tfstate" \
+            -backend-config="region=${{ env.AWS_REGION }}" \
+            -backend-config="dynamodb_table=${{ env.TF_LOCK_TABLE }}" \
+            -backend-config="encrypt=true"
+
+      - name: Display Manual Cleanup Warnings
+        run: |
+          echo "--------------------------------------------------------------------"
+          echo "⚠️ IMPORTANT MANUAL CLEANUP REQUIRED BEFORE DESTROY COMPLETES ⚠️"
+          echo "--------------------------------------------------------------------"
+          echo "1. ECR Repositories:"
+          echo "   - You MUST MANUALLY DELETE ALL IMAGES from the ECR repositories"
+          echo "     managed by this Terraform configuration (e.g., '${{ env.ECR_REPOSITORY_FRONTEND }}',"
+          echo "     '${{ env.ECR_REPOSITORY_BACKEND }}') in the '${{ env.AWS_REGION }}' region."
+          echo "   - Terraform cannot delete ECR repositories that contain images."
+          echo "   - FAILURE TO DO SO WILL CAUSE THE 'terraform destroy' STEP TO FAIL."
+          echo ""
+          echo "2. Terraform State S3 Bucket ('${{ env.TF_STATE_BUCKET }}'):"
+          echo "   - This bucket WILL NOT be deleted by this workflow."
+          echo ""
+          echo "3. Terraform Lock DynamoDB Table ('${{ env.TF_LOCK_TABLE }}'):"
+          echo "   - This table WILL NOT be deleted by this workflow."
+          echo ""
+          echo "4. AWS Secrets Manager Secrets:"
+          echo "   - Any secrets (like the one referenced by MONGO_URI_SECRET_ARN)"
+          echo "     WILL NOT be deleted by this workflow."
+          echo "--------------------------------------------------------------------"
+          echo "Proceeding with 'terraform destroy' in 10 seconds..."
+          sleep 10
+
+      - name: Terraform Destroy
+        working-directory: ./infra
+        run: |
+          terraform destroy -auto-approve \
+            -var="mongo_uri_secret_arn=${{ secrets.MONGO_URI_SECRET_ARN }}"
+          # Add other -var arguments if your destroy process strictly requires them,
+          # though often only needed for lookup/dependency during destroy.
+          # Example:
+          # -var="frontend_image_tag=placeholder" \
+          # -var="backend_image_tag=placeholder" 
